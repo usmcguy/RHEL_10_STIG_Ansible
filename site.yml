@@ -1,0 +1,5 @@
+- name: RHEL 10 Supplemental STIG playbook
+  hosts: localhost
+  gather_facts: true
+  roles:
+    - rhel10STIG_supp

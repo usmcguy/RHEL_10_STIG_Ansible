@@ -1,0 +1,45 @@
+# V-280931 SV-280931r1197213 RHEL-10-001020 SRG-OS-000366-GPOS-00153
+- name: Inspect {{ source_key_path }} with sequoia-sq
+  ansible.builtin.command:
+    cmd: "sq inspect {{ source_key_path }}"
+  register: sq_source
+  changed_when: false
+
+- name: Extract {{ source_key_path }} fingerprints
+  ansible.builtin.set_fact:
+    source_fingerprints: >-
+      {{
+        sq_source.stdout_lines
+        | select('search', '^Fingerprint:')
+        | map('regex_replace', '^Fingerprint:\\s*', '')
+        | map('regex_replace', '\\s+', '')
+        | list
+      }}
+
+- name: Find missing fingerprints for {{ source_key_path }} from the RPM file
+  ansible.builtin.set_fact:
+    missing_file_fingerprints: "{{ source_fingerprints | difference(current_file_fingerprints) }}"
+
+- name: Find missing fingerprints for {{ source_key_path }} from the RPM db
+  ansible.builtin.set_fact:
+    missing_rpm_fingerprints: "{{ source_fingerprints | difference(current_rpm_fingerprints) }}"
+
+- name: Update current_file_fingerprints variable for looping
+  ansible.builtin.set_fact:
+    current_file_fingerprints: "{{ current_file_fingerprints | union(source_fingerprints) }}"
+  when: missing_file_fingerprints | length > 0
+
+- name: Update current_rpm_fingerprints variable for looping
+  ansible.builtin.set_fact:
+    current_rpm_fingerprints: "{{ current_rpm_fingerprints | union(source_fingerprints) }}"
+  when: missing_rpm_fingerprints | length > 0
+
+- name: stigrule_280931__append_RPM_file
+  ansible.builtin.shell: |
+    cat "{{ source_key_path }}" >> /etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
+  when: missing_file_fingerprints | length > 0
+
+- name: stigrule_280931__import_key_rpm_db
+  ansible.builtin.command:
+    cmd: "rpm --import {{ source_key_path }}"
+  when: missing_rpm_fingerprints | length > 0
